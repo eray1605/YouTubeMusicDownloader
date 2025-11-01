@@ -222,7 +222,7 @@ download_frame = tk.Frame(root, bg=BG_COLOR, pady=10)
 download_frame.pack(pady=10)
 
 tk.Label(download_frame, text="YouTube-URL zum Download:", font=LARGE_FONT, fg=FG_COLOR, bg=BG_COLOR).pack(pady=5)
-url_entry = ttk.Entry(download_frame, width=50, font=NORMAL_FONT, state="readonly")
+url_entry = ttk.Entry(download_frame, width=50, font=NORMAL_FONT)
 url_entry.pack(pady=5)
 download_button = ttk.Button(download_frame, text="Download starten", command=lambda: download_audio(url_entry.get()))
 download_button.pack(ipady=5)
