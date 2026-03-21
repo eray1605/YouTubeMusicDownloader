@@ -1,44 +1,75 @@
-# YouTube Audio Downloader
+# YouTube Music Downloader
 
-A simple desktop application built with Python and Tkinter to search for and download the audio track from YouTube videos as high-quality FLAC files.
+A modern desktop application to search and download audio from YouTube videos as high-quality WAV files. Built with Python and CustomTkinter, featuring a sleek dark/light theme UI with animated toggle.
 
+---
 
-### Preview
+## Preview
 
+![App Screenshot](UI.png)
 
+---
 
-![Vorschau der Benutzeroberfläche](UI.png)
+## Features
 
+- **Song Search** — Search for any song or video by name, powered by yt-dlp
+- **10 Results** — Displays up to 10 search results with thumbnails, titles, channel names and duration
+- **One-Click Select** — Click "Auswählen" to pick a result for download
+- **High-Quality WAV** — Downloads the best available audio and converts to uncompressed WAV (44.1 kHz, 16-bit, stereo)
+- **Dark / Light Theme** — Animated theme toggle with sun/moon icons
+- **Standalone EXE** — Runs as a single portable `.exe` on Windows — no Python installation needed
 
-### Features
+---
 
-- Song Search: Search for songs or videos directly by name.
+## Download
 
-- Results List: Displays the top 3 search results with titles and thumbnails.
+Download the latest release from the [Releases](../../releases) page. Extract the ZIP and run `YT Music Downloader.exe`.
 
-- Easy Selection: Click on a search result to select it for download.
+> **Note:** FFmpeg is bundled in the EXE — no extra setup required.
 
-- High Quality: Downloads the best possible audio quality and converts it into a FLAC file.
+---
 
-- Intuitive Interface: A simple and easy-to-understand graphical user interface.
-
+## Run from Source
 
 ### Prerequisites
 
-- Before you can run the script, you need to have a few things installed and set up:
+- Python 3.10+
+- FFmpeg installed and added to your system PATH
 
-- Python 3: You need an installed version of Python 3.
+### Installation
 
-- FFmpeg: This program is required to convert the downloaded video files into FLACs.
-         Download it from gyan.dev/ffmpeg/builds/.
-    
-- Extract it into a folder (e.g., C:\ffmpeg). Important: You must add the bin subfolder (e.g., C:\ffmpeg\bin) to your system's environment variables (Path).
-    
-Python Libraries: You will need the following Python packages: 
--  yt-dlp 
-- Pillow 
-- requests
+```bash
+pip install customtkinter yt-dlp Pillow requests
+```
 
+### Start
+
+```bash
+cd YT-MP3-Downloader-main
+python main.py
+```
+
+---
+
+## How It Works
+
+1. Enter a song name in the search bar and click **Suchen**
+2. Browse the results — each card shows a thumbnail, title, channel and duration
+3. Click **Auswählen** on the song you want
+4. The URL is filled in automatically — click **Download**
+5. The WAV file is saved to your `Downloads` folder
+
+---
+
+## Tech Stack
+
+- **CustomTkinter** — Modern themed GUI toolkit
+- **yt-dlp** — YouTube search and audio extraction
+- **FFmpeg** — Audio conversion to WAV
+- **Pillow** — Thumbnail loading and image processing
+- **PyInstaller** — Packaging as standalone Windows EXE
+
+---
 
 ## Disclaimer
 
