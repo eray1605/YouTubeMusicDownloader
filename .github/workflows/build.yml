@@ -77,14 +77,13 @@ jobs:
       - name: Build with PyInstaller (Windows)
         if: runner.os == 'Windows'
         working-directory: YT-MP3-Downloader-main
-        shell: powershell
+        shell: bash
         run: |
-          $env:Path = [System.Environment]::GetEnvironmentVariable("Path","Machine") + ";" + [System.Environment]::GetEnvironmentVariable("Path","User")
-          $ffmpegDir = "${{ steps.ffmpeg_win.outputs.dir }}"
-          pyinstaller --onefile --noconsole `
-            --name "YTMusicDownloader" `
-            --icon temp_icon.ico `
-            --add-binary "$ffmpegDir\ffmpeg.exe;." `
+          FFMPEG_DIR="${{ steps.ffmpeg_win.outputs.dir }}"
+          python -m PyInstaller --onefile --noconsole \
+            --name "YTMusicDownloader" \
+            --icon temp_icon.ico \
+            --add-binary "$FFMPEG_DIR/ffmpeg.exe;." \
             main.py
 
       - name: Build with PyInstaller (macOS)
