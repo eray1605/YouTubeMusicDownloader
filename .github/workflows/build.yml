@@ -1,0 +1,123 @@
+name: Build & Release
+
+on:
+  push:
+    tags:
+      - "v*"
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    strategy:
+      matrix:
+        include:
+          - os: windows-latest
+            name: Windows
+            artifact: "YT-Music-Downloader-Windows.zip"
+            exe_name: "YT Music Downloader.exe"
+          - os: macos-latest
+            name: macOS
+            artifact: "YT-Music-Downloader-macOS.zip"
+            exe_name: "YT Music Downloader"
+          - os: ubuntu-latest
+            name: Linux
+            artifact: "YT-Music-Downloader-Linux.zip"
+            exe_name: "YT Music Downloader"
+
+    runs-on: ${{ matrix.os }}
+    name: Build ${{ matrix.name }}
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Install FFmpeg (Linux)
+        if: runner.os == 'Linux'
+        run: sudo apt-get update && sudo apt-get install -y ffmpeg
+
+      - name: Install FFmpeg (macOS)
+        if: runner.os == 'macOS'
+        run: brew install ffmpeg
+
+      - name: Install FFmpeg (Windows)
+        if: runner.os == 'Windows'
+        run: choco install ffmpeg -y
+
+      - name: Install Python dependencies
+        run: pip install customtkinter yt-dlp Pillow requests pyinstaller
+
+      - name: Find FFmpeg path
+        id: ffmpeg
+        shell: bash
+        run: |
+          FFMPEG_PATH=$(which ffmpeg)
+          FFMPEG_DIR=$(dirname "$FFMPEG_PATH")
+          echo "dir=$FFMPEG_DIR" >> "$GITHUB_OUTPUT"
+          echo "FFmpeg found at: $FFMPEG_DIR"
+
+      - name: Build with PyInstaller (Windows)
+        if: runner.os == 'Windows'
+        working-directory: YT-MP3-Downloader-main
+        shell: bash
+        run: |
+          pyinstaller --onefile --noconsole \
+            --name "YT Music Downloader" \
+            --icon temp_icon.ico \
+            --add-binary "${{ steps.ffmpeg.outputs.dir }}/ffmpeg.exe;." \
+            main.py
+
+      - name: Build with PyInstaller (macOS)
+        if: runner.os == 'macOS'
+        working-directory: YT-MP3-Downloader-main
+        run: |
+          pyinstaller --onefile --noconsole \
+            --name "YT Music Downloader" \
+            --add-binary "${{ steps.ffmpeg.outputs.dir }}/ffmpeg:." \
+            main.py
+
+      - name: Build with PyInstaller (Linux)
+        if: runner.os == 'Linux'
+        working-directory: YT-MP3-Downloader-main
+        run: |
+          pyinstaller --onefile --noconsole \
+            --name "YT Music Downloader" \
+            --add-binary "${{ steps.ffmpeg.outputs.dir }}/ffmpeg:." \
+            main.py
+
+      - name: Package artifact
+        shell: bash
+        run: |
+          cd YT-MP3-Downloader-main/dist
+          if [ "${{ runner.os }}" == "Windows" ]; then
+            7z a "../../${{ matrix.artifact }}" "${{ matrix.exe_name }}"
+          else
+            zip "../../${{ matrix.artifact }}" "${{ matrix.exe_name }}"
+          fi
+
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: ${{ matrix.name }}
+          path: ${{ matrix.artifact }}
+
+  release:
+    needs: build
+    runs-on: ubuntu-latest
+    steps:
+      - name: Download all artifacts
+        uses: actions/download-artifact@v4
+
+      - name: Create Release
+        uses: softprops/action-gh-release@v2
+        with:
+          generate_release_notes: true
+          files: |
+            Windows/*.zip
+            macOS/*.zip
+            Linux/*.zip

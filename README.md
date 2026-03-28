@@ -17,15 +17,21 @@ A modern desktop application to search and download audio from YouTube videos as
 - **One-Click Select** — Click "Auswählen" to pick a result for download
 - **High-Quality WAV** — Downloads the best available audio and converts to uncompressed WAV (44.1 kHz, 16-bit, stereo)
 - **Dark / Light Theme** — Animated theme toggle with sun/moon icons
-- **Standalone EXE** — Runs as a single portable `.exe` on Windows — no Python installation needed
+- **Cross-Platform** — Available for Windows, macOS and Linux as standalone executables
 
 ---
 
 ## Download
 
-Download the latest release from the [Releases](../../releases) page. Extract the ZIP and run `YT Music Downloader.exe`.
+Download the latest release for your platform from the [Releases](../../releases) page.
 
-> **Note:** FFmpeg is bundled in the EXE — no extra setup required.
+| Platform | File |
+|----------|------|
+| Windows  | `YT-Music-Downloader-Windows.zip` |
+| macOS    | `YT-Music-Downloader-macOS.zip` |
+| Linux    | `YT-Music-Downloader-Linux.zip` |
+
+Extract the ZIP and run the executable. FFmpeg is bundled — no extra setup required.
 
 ---
 
@@ -67,7 +73,7 @@ python main.py
 - **yt-dlp** — YouTube search and audio extraction
 - **FFmpeg** — Audio conversion to WAV
 - **Pillow** — Thumbnail loading and image processing
-- **PyInstaller** — Packaging as standalone Windows EXE
+- **PyInstaller** — Cross-platform packaging as standalone executables
 
 ---
 
