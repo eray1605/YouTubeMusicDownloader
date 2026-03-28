@@ -483,7 +483,7 @@ class App(ctk.CTk):
 
         self._dl_btn.configure(state="disabled")
         self._search_btn.configure(state="disabled")
-        self.configure(cursor="wait")
+        self.configure(cursor="watch" if sys.platform != "win32" else "wait")
         self._status.configure(text="  Download läuft...", text_color="#e94560")
 
         threading.Thread(target=self._download_thread, args=(url,), daemon=True).start()
