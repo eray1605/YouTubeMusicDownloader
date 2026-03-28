@@ -89,6 +89,8 @@ jobs:
             --hidden-import="tkinter" \
             --collect-all customtkinter \
             --add-binary "$FFMPEG_DIR/ffmpeg.exe;." \
+            --add-data "temp_icon.ico;." \
+            --add-data "icon.png;." \
             main.py
 
       - name: Build with PyInstaller (macOS)
@@ -103,6 +105,8 @@ jobs:
             --hidden-import="tkinter" \
             --collect-all customtkinter \
             --add-binary "${{ steps.ffmpeg_unix.outputs.dir }}/ffmpeg:." \
+            --add-data "temp_icon.ico:." \
+            --add-data "icon.png:." \
             main.py
 
       - name: Build with PyInstaller (Linux)
@@ -117,6 +121,8 @@ jobs:
             --hidden-import="tkinter" \
             --collect-all customtkinter \
             --add-binary "${{ steps.ffmpeg_unix.outputs.dir }}/ffmpeg:." \
+            --add-data "temp_icon.ico:." \
+            --add-data "icon.png:." \
             main.py
 
       - name: Package artifact (Windows)

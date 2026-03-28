@@ -252,8 +252,26 @@ class App(ctk.CTk):
         self.geometry("900x720")
         self.minsize(720, 560)
 
+        # Set app icon (works cross-platform)
         try:
-            self.iconbitmap("C:\\Users\\Eray\\Downloads\\YT-MP3-Downloader-main\\YT-MP3-Downloader-main\\temp_icon.ico")
+            if getattr(sys, 'frozen', False):
+                base_path = sys._MEIPASS
+            else:
+                base_path = os.path.dirname(os.path.abspath(__file__))
+
+            icon_ico = os.path.join(base_path, "temp_icon.ico")
+            icon_png = os.path.join(base_path, "icon.png")
+
+            if sys.platform == "win32" and os.path.exists(icon_ico):
+                self.iconbitmap(icon_ico)
+            elif os.path.exists(icon_png):
+                icon_image = ImageTk.PhotoImage(Image.open(icon_png))
+                self.iconphoto(True, icon_image)
+                self._icon_ref = icon_image  # prevent garbage collection
+            elif os.path.exists(icon_ico):
+                icon_image = ImageTk.PhotoImage(Image.open(icon_ico))
+                self.iconphoto(True, icon_image)
+                self._icon_ref = icon_image
         except Exception:
             pass
 
