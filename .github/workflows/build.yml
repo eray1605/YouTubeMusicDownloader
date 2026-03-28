@@ -35,9 +35,9 @@ jobs:
         with:
           python-version: "3.11"
 
-      - name: Install FFmpeg (Linux)
+      - name: Install system dependencies (Linux)
         if: runner.os == 'Linux'
-        run: sudo apt-get update && sudo apt-get install -y ffmpeg
+        run: sudo apt-get update && sudo apt-get install -y ffmpeg python3-tk python3-pil python3-pil.imagetk
 
       - name: Install FFmpeg (macOS)
         if: runner.os == 'macOS'
@@ -83,6 +83,11 @@ jobs:
           python -m PyInstaller --onefile --noconsole \
             --name "YTMusicDownloader" \
             --icon temp_icon.ico \
+            --hidden-import="PIL" \
+            --hidden-import="PIL._tkinter_finder" \
+            --hidden-import="PIL._imagingtk" \
+            --hidden-import="tkinter" \
+            --collect-all customtkinter \
             --add-binary "$FFMPEG_DIR/ffmpeg.exe;." \
             main.py
 
@@ -92,6 +97,11 @@ jobs:
         run: |
           pyinstaller --onefile --noconsole \
             --name "YTMusicDownloader" \
+            --hidden-import="PIL" \
+            --hidden-import="PIL._tkinter_finder" \
+            --hidden-import="PIL._imagingtk" \
+            --hidden-import="tkinter" \
+            --collect-all customtkinter \
             --add-binary "${{ steps.ffmpeg_unix.outputs.dir }}/ffmpeg:." \
             main.py
 
@@ -101,6 +111,11 @@ jobs:
         run: |
           pyinstaller --onefile --noconsole \
             --name "YTMusicDownloader" \
+            --hidden-import="PIL" \
+            --hidden-import="PIL._tkinter_finder" \
+            --hidden-import="PIL._imagingtk" \
+            --hidden-import="tkinter" \
+            --collect-all customtkinter \
             --add-binary "${{ steps.ffmpeg_unix.outputs.dir }}/ffmpeg:." \
             main.py
 
