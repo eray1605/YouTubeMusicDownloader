@@ -9,6 +9,33 @@ import os
 import sys
 import threading
 import math
+import subprocess
+
+
+def get_download_folder():
+    """Get the user's download folder cross-platform."""
+    # Try XDG user dirs (Linux with localized folder names)
+    try:
+        result = subprocess.run(
+            ["xdg-user-dir", "DOWNLOAD"],
+            capture_output=True, text=True, timeout=5
+        )
+        if result.returncode == 0 and result.stdout.strip():
+            path = result.stdout.strip()
+            if os.path.isdir(path):
+                return path
+    except (FileNotFoundError, subprocess.TimeoutExpired):
+        pass
+
+    # Fallback: common folder names
+    home = os.path.expanduser("~")
+    for name in ["Downloads", "İndirilenler", "Téléchargements", "Descargas", "Загрузки"]:
+        candidate = os.path.join(home, name)
+        if os.path.isdir(candidate):
+            return candidate
+
+    # Last fallback: home directory
+    return home
 
 
 def get_ffmpeg_path():
@@ -443,7 +470,9 @@ class App(ctk.CTk):
 
         threading.Thread(target=self._download_thread, args=(url,), daemon=True).start()
 
-    def _download_thread(self, url, output_path=os.path.expanduser("~/Downloads")):
+    def _download_thread(self, url, output_path=None):
+        if output_path is None:
+            output_path = get_download_folder()
         try:
             ydl_opts = {
                 'format': 'bestaudio/best',
