@@ -11,20 +11,18 @@ permissions:
 jobs:
   build:
     strategy:
+      fail-fast: false
       matrix:
         include:
           - os: windows-latest
             name: Windows
-            artifact: "YT-Music-Downloader-Windows.zip"
-            exe_name: "YT Music Downloader.exe"
+            artifact: YT-Music-Downloader-Windows
           - os: macos-latest
             name: macOS
-            artifact: "YT-Music-Downloader-macOS.zip"
-            exe_name: "YT Music Downloader"
+            artifact: YT-Music-Downloader-macOS
           - os: ubuntu-latest
             name: Linux
-            artifact: "YT-Music-Downloader-Linux.zip"
-            exe_name: "YT Music Downloader"
+            artifact: YT-Music-Downloader-Linux
 
     runs-on: ${{ matrix.os }}
     name: Build ${{ matrix.name }}
@@ -47,13 +45,17 @@ jobs:
 
       - name: Install FFmpeg (Windows)
         if: runner.os == 'Windows'
-        run: choco install ffmpeg -y
+        shell: powershell
+        run: |
+          choco install ffmpeg -y
+          refreshenv
 
       - name: Install Python dependencies
         run: pip install customtkinter yt-dlp Pillow requests pyinstaller
 
-      - name: Find FFmpeg path
-        id: ffmpeg
+      - name: Find FFmpeg path (Unix)
+        if: runner.os != 'Windows'
+        id: ffmpeg_unix
         shell: bash
         run: |
           FFMPEG_PATH=$(which ffmpeg)
@@ -61,15 +63,28 @@ jobs:
           echo "dir=$FFMPEG_DIR" >> "$GITHUB_OUTPUT"
           echo "FFmpeg found at: $FFMPEG_DIR"
 
+      - name: Find FFmpeg path (Windows)
+        if: runner.os == 'Windows'
+        id: ffmpeg_win
+        shell: powershell
+        run: |
+          $env:Path = [System.Environment]::GetEnvironmentVariable("Path","Machine") + ";" + [System.Environment]::GetEnvironmentVariable("Path","User")
+          $ffmpegPath = (Get-Command ffmpeg).Source
+          $ffmpegDir = Split-Path $ffmpegPath
+          echo "dir=$ffmpegDir" >> $env:GITHUB_OUTPUT
+          echo "FFmpeg found at: $ffmpegDir"
+
       - name: Build with PyInstaller (Windows)
         if: runner.os == 'Windows'
         working-directory: YT-MP3-Downloader-main
-        shell: bash
+        shell: powershell
         run: |
-          pyinstaller --onefile --noconsole \
-            --name "YT Music Downloader" \
-            --icon temp_icon.ico \
-            --add-binary "${{ steps.ffmpeg.outputs.dir }}/ffmpeg.exe;." \
+          $env:Path = [System.Environment]::GetEnvironmentVariable("Path","Machine") + ";" + [System.Environment]::GetEnvironmentVariable("Path","User")
+          $ffmpegDir = "${{ steps.ffmpeg_win.outputs.dir }}"
+          pyinstaller --onefile --noconsole `
+            --name "YTMusicDownloader" `
+            --icon temp_icon.ico `
+            --add-binary "$ffmpegDir\ffmpeg.exe;." `
             main.py
 
       - name: Build with PyInstaller (macOS)
@@ -77,8 +92,8 @@ jobs:
         working-directory: YT-MP3-Downloader-main
         run: |
           pyinstaller --onefile --noconsole \
-            --name "YT Music Downloader" \
-            --add-binary "${{ steps.ffmpeg.outputs.dir }}/ffmpeg:." \
+            --name "YTMusicDownloader" \
+            --add-binary "${{ steps.ffmpeg_unix.outputs.dir }}/ffmpeg:." \
             main.py
 
       - name: Build with PyInstaller (Linux)
@@ -86,25 +101,27 @@ jobs:
         working-directory: YT-MP3-Downloader-main
         run: |
           pyinstaller --onefile --noconsole \
-            --name "YT Music Downloader" \
-            --add-binary "${{ steps.ffmpeg.outputs.dir }}/ffmpeg:." \
+            --name "YTMusicDownloader" \
+            --add-binary "${{ steps.ffmpeg_unix.outputs.dir }}/ffmpeg:." \
             main.py
 
-      - name: Package artifact
-        shell: bash
+      - name: Package artifact (Windows)
+        if: runner.os == 'Windows'
+        shell: powershell
+        run: |
+          Compress-Archive -Path "YT-MP3-Downloader-main/dist/YTMusicDownloader.exe" -DestinationPath "${{ matrix.artifact }}.zip"
+
+      - name: Package artifact (Unix)
+        if: runner.os != 'Windows'
         run: |
           cd YT-MP3-Downloader-main/dist
-          if [ "${{ runner.os }}" == "Windows" ]; then
-            7z a "../../${{ matrix.artifact }}" "${{ matrix.exe_name }}"
-          else
-            zip "../../${{ matrix.artifact }}" "${{ matrix.exe_name }}"
-          fi
+          zip "../../${{ matrix.artifact }}.zip" YTMusicDownloader
 
       - name: Upload artifact
         uses: actions/upload-artifact@v4
         with:
           name: ${{ matrix.name }}
-          path: ${{ matrix.artifact }}
+          path: ${{ matrix.artifact }}.zip
 
   release:
     needs: build
