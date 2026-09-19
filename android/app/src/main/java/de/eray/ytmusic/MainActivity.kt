@@ -5,6 +5,7 @@ import android.net.Uri
 import android.os.Build
 import android.os.Bundle
 import android.os.Environment
+import android.provider.OpenableColumns
 import android.provider.Settings
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.rememberLauncherForActivityResult
@@ -61,11 +62,44 @@ class MainActivity : ComponentActivity() {
         }
     }
 
+    /**
+     * Die gewählte Datei in den App-Ordner kopieren – mit passender Endung.
+     *
+     * Der Dateiwähler liefert je nach Quelle eine URI wie ".../document/msf:42".
+     * Daraus wurde ein Name ohne ".csv", und der Kern las die Liste dann als
+     * JSON, scheiterte und schwieg: auf dem Bildschirm passierte nichts. Also
+     * den Anzeigenamen erfragen und notfalls am Inhalt erkennen, was es ist.
+     */
     private fun kopieren(uri: Uri): String {
-        val ziel = File(filesDir, "playlist_" +
-            (uri.lastPathSegment?.substringAfterLast('/') ?: "export.csv"))
+        val anzeige = contentResolver
+            .query(uri, arrayOf(OpenableColumns.DISPLAY_NAME), null, null, null)
+            ?.use { if (it.moveToFirst()) it.getString(0) else null }
+            ?: uri.lastPathSegment?.substringAfterLast('/')
+
+        val roh = File(filesDir, "playlist_import.tmp")
         contentResolver.openInputStream(uri).use { ein ->
-            ziel.outputStream().use { aus -> ein?.copyTo(aus) }
+            roh.outputStream().use { aus -> ein?.copyTo(aus) }
+        }
+        if (roh.length() == 0L) throw java.io.IOException("Datei ist leer")
+
+        var endung = anzeige?.substringAfterLast('.', "")?.lowercase() ?: ""
+        if (endung != "csv" && endung != "json") {
+            // Am ersten sichtbaren Zeichen erkennbar: "{" oder "[" heißt JSON.
+            val erstes = roh.bufferedReader().use { leser ->
+                generateSequence { leser.read().takeIf { z -> z >= 0 } }
+                    .firstOrNull { z -> !Character.isWhitespace(z) }?.toChar()
+            }
+            endung = if (erstes == '{' || erstes == '[') "json" else "csv"
+        }
+
+        // Der Dateiname ist zugleich der angezeigte Playlistname.
+        val basis = (anzeige?.substringBeforeLast('.') ?: "")
+            .replace(Regex("[^\\p{L}\\p{N} _-]"), "_").trim().ifBlank { "Playlist" }
+        val ziel = File(filesDir, "$basis.$endung")
+        ziel.delete()
+        if (!roh.renameTo(ziel)) {
+            roh.copyTo(ziel, overwrite = true)
+            roh.delete()
         }
         return ziel.absolutePath
     }
@@ -403,10 +437,17 @@ class MainActivity : ComponentActivity() {
         var zustaende by remember { mutableStateOf(mapOf<Int, String>()) }
         var fertig by remember { mutableStateOf(0) }
         var gesamt by remember { mutableStateOf(0) }
+        // Fehler sichtbar machen: Vorher wurde jeder Fehlschlag verschluckt,
+        // und der Knopf sah aus, als hätte er nichts getan.
+        var fehler by remember { mutableStateOf<String?>(null) }
 
         val waehlen = rememberLauncherForActivityResult(
             ActivityResultContracts.OpenDocument()) { uri ->
-            uri?.let { playlist = kopieren(it) }
+            uri?.let {
+                fehler = null
+                try { playlist = kopieren(it) }
+                catch (e: Throwable) { fehler = "Datei nicht lesbar: ${e.message}" }
+            }
         }
 
         LaunchedEffect(playlist, format) {
@@ -424,7 +465,15 @@ class MainActivity : ComponentActivity() {
                     val o = liste.getJSONObject(it)
                     Song(o.getString("title"), o.getString("artist"), o.getString("duration"))
                 }
-            } catch (_: Throwable) { }
+                fehler = if (anzahl == 0)
+                    "Keine Songs erkannt. Erwartet wird ein Export mit einer " +
+                    "Spalte für den Titel (z. B. \"Track Name\" aus Exportify)."
+                else null
+            } catch (e: Throwable) {
+                anzahl = 0
+                songs = listOf()
+                fehler = "Playlist nicht lesbar: ${e.message}"
+            }
         }
         LaunchedEffect(Unit) {
             while (true) {
@@ -442,6 +491,9 @@ class MainActivity : ComponentActivity() {
                    colors = ButtonDefaults.buttonColors(containerColor = Farben.Playlist),
                    modifier = Modifier.fillMaxWidth()) {
                 Text("Playlist laden (CSV oder JSON)", fontWeight = FontWeight.Bold)
+            }
+            fehler?.let {
+                Text(it, fontSize = 11.sp, color = Farben.Warnung)
             }
             if (anzahl > 0) {
                 Surface(color = MaterialTheme.colorScheme.surface,
