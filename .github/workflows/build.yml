@@ -100,6 +100,7 @@ jobs:
           FFMPEG_DIR="${{ steps.ffmpeg_win.outputs.dir }}"
           python -m PyInstaller --onefile --noconsole \
             --name "YTMusicDownloader" \
+            --paths . \
             --icon temp_icon.ico \
             --hidden-import="PIL" \
             --hidden-import="PIL._tkinter_finder" \
@@ -118,6 +119,7 @@ jobs:
         run: |
           pyinstaller --onefile --noconsole \
             --name "YTMusicDownloader" \
+            --paths . \
             --hidden-import="PIL" \
             --hidden-import="PIL._tkinter_finder" \
             --hidden-import="PIL._imagingtk" \
@@ -135,6 +137,7 @@ jobs:
         run: |
           pyinstaller --onefile --noconsole \
             --name "YTMusicDownloader" \
+            --paths . \
             --hidden-import="PIL" \
             --hidden-import="PIL._tkinter_finder" \
             --hidden-import="PIL._imagingtk" \
@@ -145,6 +148,20 @@ jobs:
             --add-data "temp_icon.ico:." \
             --add-data "icon.png:." \
             main.py
+
+      # PyInstaller meldet auch dann Erfolg, wenn seine Import-Analyse `ytmd`
+      # nicht gefunden hat - das Programm bricht dann erst beim Nutzer ab.
+      # Genau so gingen v1.4.3 und v1.4.4 als startunfaehige Binaries raus.
+      - name: Verify bundle is complete
+        shell: bash
+        working-directory: YT-MP3-Downloader-main
+        run: |
+          if [ "$RUNNER_OS" = "Windows" ]; then
+            PROGRAMM="dist/YTMusicDownloader.exe"
+          else
+            PROGRAMM="dist/YTMusicDownloader"
+          fi
+          python ../tools/verify_bundle.py "$PROGRAMM"
 
       - name: Package artifact (Windows)
         if: runner.os == 'Windows'
