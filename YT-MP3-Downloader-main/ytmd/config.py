@@ -7,7 +7,7 @@ from typing import Optional, Tuple
 # erkennen, welcher Stand gerade läuft – und ein altes Fertigprogramm sieht
 # dann aus wie eine kaputte Korrektur. Bei einem Release mitziehen (die
 # Android-App führt dieselbe Nummer in android/app/build.gradle.kts).
-APP_VERSION = "1.4.4"
+APP_VERSION = "1.4.5"
 
 FONT_FAMILY = "Satoshi Medium"
 
