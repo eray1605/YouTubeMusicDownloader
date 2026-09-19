@@ -11,7 +11,6 @@ in welcher Reihenfolge die Downloads tatsächlich fertig werden.
 import os
 import re
 import threading
-import time
 from collections import Counter
 from concurrent.futures import ThreadPoolExecutor
 from dataclasses import dataclass, field
@@ -22,8 +21,8 @@ from ytmd import tags, verify
 from ytmd.albumart import find_cover_url
 from ytmd.covers import fetch_cover
 from ytmd.utils import audio_datei, free_bytes, get_download_folder, sanitize_filename
-from ytmd.youtube import (FATAL_ERRORS, NO_MATCH, RETRY_SAME_VIDEO, DownloadCancelled,
-                          TrackError, classify_error, download_audio, find_matches,
+from ytmd.youtube import (FATAL_ERRORS, NO_MATCH, DownloadCancelled, TrackError,
+                          classify_error, download_with_retries, find_matches,
                           result_url, thumbnail_url)
 
 # Zustände, die per on_status gemeldet werden
@@ -344,33 +343,28 @@ class PlaylistDownloader:
         last_category = None
 
         for candidate in candidates[:config.MAX_CANDIDATES]:
-            url = result_url(candidate)
-            for attempt in range(len(config.RETRY_DELAYS) + 1):
-                if self._cancelled:
-                    raise DownloadCancelled()
-                if attempt or last_error:
-                    self._status(index, RETRYING)
-                try:
-                    existed = download_audio(
-                        url, folder,
-                        filename_base=filename_base,
-                        should_cancel=lambda: self._cancelled,
-                        audio_format=self.audio_format,
-                        cookies_from_browser=self.cookies_from_browser,
-                        throttle=True,
-                    )
-                    return existed, candidate
-                except DownloadCancelled:
-                    raise
-                except Exception as e:
-                    last_error, last_category = e, classify_error(e)
-                    # Nur bei Drosselung lohnt derselbe Link erneut. Gegen die
-                    # Altersprüfung hilft nur ein anderes Video oder Cookies –
-                    # die früheren Player-Client-Tricks sind alle dicht.
-                    if last_category not in RETRY_SAME_VIDEO:
-                        break
-                    if attempt < len(config.RETRY_DELAYS):
-                        time.sleep(config.RETRY_DELAYS[attempt])
+            if self._cancelled:
+                raise DownloadCancelled()
+            if last_error:
+                self._status(index, RETRYING)
+            try:
+                # Die Pausen bei 403/429 stecken in download_with_retries; hier
+                # bleibt nur der Wechsel zum nächsten Suchtreffer, wenn ein Video
+                # endgültig nicht geht (gesperrt, gelöscht, altersbeschränkt).
+                existed = download_with_retries(
+                    result_url(candidate), folder,
+                    on_retry=lambda *_: self._status(index, RETRYING),
+                    should_cancel=lambda: self._cancelled,
+                    filename_base=filename_base,
+                    audio_format=self.audio_format,
+                    cookies_from_browser=self.cookies_from_browser,
+                    throttle=True,
+                )
+                return existed, candidate
+            except DownloadCancelled:
+                raise
+            except TrackError as e:
+                last_error, last_category = e, e.category
 
         raise TrackError(str(last_error), last_category)
 

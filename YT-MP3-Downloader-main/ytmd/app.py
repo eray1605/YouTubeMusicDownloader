@@ -18,7 +18,8 @@ from ytmd.playlist import parse_playlist_file
 from ytmd.utils import (format_duration, format_size, free_bytes,
                         get_download_folder, resource_dir)
 from ytmd.widgets import AnimatedThemeToggle
-from ytmd.youtube import ERROR_LABELS, download_audio, search_youtube
+from ytmd.youtube import (ERROR_LABELS, TrackError, download_with_retries,
+                          error_hint, search_youtube, ytdlp_version)
 
 # Anzeige der Playlist-Zustände aus downloader.py: (Text, Farbe)
 STATUS_TEXTS = {
@@ -125,6 +126,14 @@ class App(ctk.CTk):
                      text_color=(config.COLOR_ACCENT, config.COLOR_ACCENT)).pack(pady=(16, 2))
         ctk.CTkLabel(header, text="Suche nach Songs und lade sie als WAV herunter",
                      font=(FONT_FAMILY, 12),
+                     text_color=config.COLOR_MUTED).pack(pady=(0, 2))
+
+        # Fassung sichtbar machen – vor allem die von yt-dlp: Ist die zu alt für
+        # YouTubes aktuellen Player, hagelt es 403er, und im Fertigprogramm
+        # steckt sie unveränderlich fest. Ohne Anzeige rät man beim Suchen.
+        ytdlp = ytdlp_version() or "unbekannt"
+        ctk.CTkLabel(header, text=f"Fassung {config.APP_VERSION}  ·  yt-dlp {ytdlp}",
+                     font=(FONT_FAMILY, 10),
                      text_color=config.COLOR_MUTED).pack(pady=(0, 12))
 
         # Theme Toggle
@@ -853,15 +862,45 @@ class App(ctk.CTk):
 
         threading.Thread(target=self._download_thread, args=(url,), daemon=True).start()
 
+    def _show_retry(self, attempt, category):
+        """Zwischenstand, solange ein einzelner Song erneut versucht wird."""
+        text = (f"  {ERROR_LABELS.get(category, category)} – "
+                f"neuer Versuch ({attempt}/{len(config.RETRY_DELAYS)})...")
+        self.after(0, lambda: self._status.configure(text=text,
+                                                     text_color=config.COLOR_WARNING))
+
+    @staticmethod
+    def _error_text(exc):
+        """Verständliche Meldung statt der rohen yt-dlp-Zeile.
+
+        Die Originalmeldung bleibt am Ende stehen – ohne sie lässt sich
+        "Sonstiger Fehler" nicht auseinanderklamüsern.
+        """
+        category = exc.category if isinstance(exc, TrackError) else youtube.classify_error(exc)
+        text = ERROR_LABELS.get(category, "Fehler")
+        rat = error_hint(category)
+        if rat:
+            text += f"\n\n{rat}"
+        original = " ".join(str(exc).split())
+        if original:
+            if len(original) > 200:
+                original = original[:200] + "..."
+            text += f"\n\nMeldung von yt-dlp:\n{original}"
+        return text
+
     def _download_thread(self, url, output_path=None):
         if output_path is None:
             output_path = get_download_folder()
         try:
-            download_audio(url, output_path, audio_format=self._audio_format)
+            # Dieselbe Wiederholung wie beim Playlist-Download: Ein 403 ist oft
+            # nur eine kurze Drosselung und klappt nach einer Pause doch.
+            download_with_retries(url, output_path,
+                                  audio_format=self._audio_format,
+                                  on_retry=self._show_retry)
             self.after(0, lambda: messagebox.showinfo("Fertig", "Download erfolgreich abgeschlossen!"))
         except Exception as e:
-            err_msg = str(e)
-            self.after(0, lambda: messagebox.showerror("Fehler", f"Download fehlgeschlagen: {err_msg}"))
+            text = self._error_text(e)
+            self.after(0, lambda: messagebox.showerror("Download fehlgeschlagen", text))
         finally:
             self.after(0, lambda: self.configure(cursor=""))
             self.after(0, lambda: self._status.configure(text=""))
