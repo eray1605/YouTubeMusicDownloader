@@ -83,35 +83,29 @@ def suche(query, limit=None):
 
 
 def fehlertext(exc):
-    """Rohen yt-dlp-Fehler in eine verständliche Meldung samt Rat übersetzen."""
+    """Rohen yt-dlp-Fehler in eine verständliche Meldung samt Rat übersetzen.
+
+    Ursache und Rat kommen aus youtube.py, damit Android und Desktop bei
+    demselben Fehler dasselbe erzählen.
+    """
     from ytmd import youtube
 
-    art = youtube.classify_error(exc)
+    art = exc.category if isinstance(exc, youtube.TrackError) else youtube.classify_error(exc)
     text = youtube.ERROR_LABELS.get(art, "Fehler")
-    rat = {
-        youtube.BOT_CHECK: "YouTube stuft die Zugriffe als automatisiert ein. "
-                           "1–2 Stunden warten und weniger gleichzeitig laden.",
-        youtube.BLOCKED: "Vorübergehend blockiert – später erneut versuchen.",
-        youtube.RATE_LIMITED: "Zu viele Anfragen – kurz warten.",
-        youtube.AGE_RESTRICTED: "Altersbeschränkt: nur mit angemeldetem Zugang.",
-        youtube.UNAVAILABLE: "Dieses Video ist nicht mehr abrufbar.",
-        youtube.NO_FORMAT: "Keine Tonspur geliefert – meist Folge einer Sperre.",
-        youtube.FFMPEG_MISSING: "FFmpeg fehlt, deshalb keine Umwandlung möglich.",
-        youtube.NETWORK: "Keine Verbindung.",
-        youtube.DISK: "Kein Speicherplatz mehr.",
-    }.get(art)
+    rat = youtube.error_hint(art)
     return f"{text}\n{rat}" if rat else text
 
 
 def einzeln_laden(url, target_folder, audio_format="wav", ffmpeg_path=None):
     """Einen einzelnen Song laden – wie das URL-Feld der Desktop-App."""
-    from ytmd.youtube import download_audio
+    from ytmd.youtube import download_with_retries
 
     if ffmpeg_path:
         utils.set_ffmpeg_path(ffmpeg_path)
     os.makedirs(target_folder, exist_ok=True)
     try:
-        download_audio(url, target_folder, audio_format=format_by_name(audio_format))
+        download_with_retries(url, target_folder,
+                              audio_format=format_by_name(audio_format))
     except Exception as e:
         return fehlertext(e)
     return "Fertig – gespeichert in " + target_folder

@@ -50,8 +50,20 @@ jobs:
           choco install ffmpeg -y
           refreshenv
 
+      # --upgrade ist wichtig: yt-dlp wird hier fest ins Fertigprogramm gepackt
+      # und kann sich danach nicht mehr selbst erneuern. Kommt eine alte
+      # Fassung mit, liefert YouTube schon nach wenigen Wochen 403er.
       - name: Install Python dependencies
-        run: pip install customtkinter yt-dlp Pillow requests mutagen pyinstaller
+        run: pip install --upgrade customtkinter yt-dlp Pillow requests mutagen pyinstaller
+
+      # Im Nachhinein ist sonst nicht feststellbar, welche yt-dlp-Fassung in
+      # einem Release steckt – genau die Frage bei jedem 403-Bericht.
+      - name: Record yt-dlp version
+        shell: bash
+        run: |
+          YTDLP=$(python -c "import yt_dlp; print(yt_dlp.version.__version__)")
+          echo "Eingepackt: yt-dlp $YTDLP"
+          echo "- **${{ matrix.name }}**: yt-dlp \`$YTDLP\`" >> "$GITHUB_STEP_SUMMARY"
 
       - name: Find FFmpeg path (Unix)
         if: runner.os != 'Windows'

@@ -3,6 +3,12 @@
 from dataclasses import dataclass, field
 from typing import Optional, Tuple
 
+# Fassung der Desktop-App, sichtbar im Kopfbereich. Ohne sie lässt sich nicht
+# erkennen, welcher Stand gerade läuft – und ein altes Fertigprogramm sieht
+# dann aus wie eine kaputte Korrektur. Bei einem Release mitziehen (die
+# Android-App führt dieselbe Nummer in android/app/build.gradle.kts).
+APP_VERSION = "1.4.3"
+
 FONT_FAMILY = "Satoshi Medium"
 
 # --- Suche ---

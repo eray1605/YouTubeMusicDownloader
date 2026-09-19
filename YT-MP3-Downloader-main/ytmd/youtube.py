@@ -3,6 +3,8 @@
 import difflib
 import os
 import re
+import sys
+import time
 
 from yt_dlp import YoutubeDL
 
@@ -115,6 +117,73 @@ def classify_error(exc):
             or "unavailable" in text or "terminated" in text):
         return UNAVAILABLE
     return OTHER
+
+
+def ytdlp_version():
+    """Eingesetzte yt-dlp-Fassung – oder None, wenn sie sich nicht lesen lässt."""
+    try:
+        import yt_dlp
+        return yt_dlp.version.__version__
+    except Exception:
+        return None
+
+
+def is_frozen():
+    """Läuft das Programm als eingepacktes Fertigprogramm (PyInstaller)?
+
+    Entscheidend für den Rat bei einer Sperre: In der gepackten Fassung steckt
+    yt-dlp fest im Programm und lässt sich nicht nachziehen – ein "pip install
+    -U yt-dlp" hilft dort also nicht.
+    """
+    return getattr(sys, "frozen", False)
+
+
+def stale_ytdlp_hint():
+    """Rat für den Verdacht "yt-dlp ist zu alt für YouTubes aktuellen Player"."""
+    fassung = ytdlp_version()
+    stand = f" (eingesetzt: {fassung})" if fassung else ""
+    if is_frozen():
+        return ("Das trifft fast immer eine veraltete yt-dlp-Fassung"
+                f"{stand}: YouTube ändert regelmäßig, wie die Tonspuren "
+                "freigegeben werden.\n"
+                "-> In diesem Fertigprogramm steckt yt-dlp fest eingebaut und "
+                "kann sich nicht selbst erneuern. Es hilft nur eine neuere "
+                "Fassung der App – oder der Start aus dem Quellcode nach "
+                "\"pip install -U yt-dlp\".")
+    return ("Das trifft fast immer eine veraltete yt-dlp-Fassung"
+            f"{stand}: YouTube ändert regelmäßig, wie die Tonspuren "
+            "freigegeben werden.\n"
+            "-> \"pip install -U yt-dlp\" ausführen, danach die App neu "
+            "starten. Bleibt es dabei, hilft \"yt-dlp --rm-cache-dir\".")
+
+
+def error_hint(category):
+    """Ein Satz Rat zu einer Fehlerart – für einzelne Songs.
+
+    Bewusst getrennt von den Hinweisen der Playlist-Zusammenfassung: Dort kommt
+    ein 403 meist von zu vielen gleichzeitigen Zugriffen. Bei einem einzelnen
+    Link gibt es die nicht, deshalb steht hier der Verdacht auf ein veraltetes
+    yt-dlp im Vordergrund.
+    """
+    if category in (BLOCKED, NO_FORMAT):
+        return stale_ytdlp_hint()
+    return {
+        BOT_CHECK: ("YouTube stuft die Zugriffe als automatisiert ein.\n"
+                    "-> 1–2 Stunden warten und bei \"Cookies\" den Browser "
+                    "wählen, in dem du bei YouTube angemeldet bist."),
+        RATE_LIMITED: "Zu viele Anfragen – ein paar Minuten warten.",
+        AGE_RESTRICTED: ("Altersbeschränkt: geht nur mit angemeldetem Zugang.\n"
+                         "-> Bei \"Cookies\" den Browser wählen, in dem du bei "
+                         "YouTube angemeldet bist."),
+        UNAVAILABLE: "Dieses Video ist nicht mehr abrufbar – anderes probieren.",
+        COOKIE_ERROR: "-> Den gewählten Browser komplett schließen und erneut versuchen.",
+        FFMPEG_MISSING: ("FFmpeg fehlt, deshalb ist keine Umwandlung möglich.\n"
+                         "-> FFmpeg installieren und die App neu starten, oder "
+                         "als Format \"Original\" wählen."),
+        NETWORK: "Keine Verbindung – Internetverbindung prüfen.",
+        DISK: "Kein Speicherplatz mehr auf dem Ziellaufwerk.",
+        NO_MATCH: "Kein sicher passender Treffer – anderen Suchbegriff probieren.",
+    }.get(category)
 
 
 def search_youtube(query, limit=config.NUM_RESULTS):
@@ -447,3 +516,33 @@ def download_audio(url, output_path, filename_base=None, should_cancel=None,
     with YoutubeDL(ydl_opts) as ydl:
         ydl.download([url])
     return False
+
+
+def download_with_retries(url, output_path, on_retry=None, should_cancel=None, **kwargs):
+    """Wie `download_audio`, aber mit Pausen bei kurzzeitigen Sperren.
+
+    403, 429 und Verbindungsabbrüche sind meist nur Drosselung: Nach einer
+    Pause klappt derselbe Link oft doch, weil yt-dlp die Medien-URL dabei neu
+    auflöst. Alles andere – gesperrt, gelöscht, altersbeschränkt – wird sofort
+    durchgereicht, statt mehrfach ins Leere zu laufen.
+
+    `on_retry(versuch, ursache)` meldet jeden weiteren Anlauf, damit die
+    Oberfläche "Neuer Versuch" anzeigen kann.
+
+    Scheitert es endgültig, fliegt ein `TrackError` mit der Ursache – die
+    rohe yt-dlp-Meldung bleibt als Text erhalten.
+    """
+    for attempt in range(len(config.RETRY_DELAYS) + 1):
+        if should_cancel and should_cancel():
+            raise DownloadCancelled()
+        try:
+            return download_audio(url, output_path, should_cancel=should_cancel, **kwargs)
+        except DownloadCancelled:
+            raise
+        except Exception as e:
+            category = classify_error(e)
+            if category not in RETRY_SAME_VIDEO or attempt >= len(config.RETRY_DELAYS):
+                raise TrackError(str(e), category) from e
+            if on_retry:
+                on_retry(attempt + 1, category)
+            time.sleep(config.RETRY_DELAYS[attempt])
