@@ -120,6 +120,7 @@ jobs:
           pyinstaller --onefile --noconsole \
             --name "YTMusicDownloader" \
             --paths . \
+            --icon icon.png \
             --hidden-import="PIL" \
             --hidden-import="PIL._tkinter_finder" \
             --hidden-import="PIL._imagingtk" \
@@ -169,8 +170,28 @@ jobs:
         run: |
           Compress-Archive -Path "YT-MP3-Downloader-main/dist/YTMusicDownloader.exe" -DestinationPath "${{ matrix.artifact }}.zip"
 
-      - name: Package artifact (Unix)
-        if: runner.os != 'Windows'
+      # Der Finder nimmt das Symbol aus dem .app-Bündel. Ein nacktes
+      # Unix-Programm kann keins tragen - deshalb zeigte das Geladene bisher
+      # nur das graue Standardsymbol, und erst die laufende App hatte eins
+      # (das setzt sie sich selbst, siehe ytmd/app.py::_set_app_icon).
+      # --noconsole legt das Bündel ohnehin an, ausgeliefert wurde aber nur
+      # die Binary daneben. Sie steckt im Bündel mit drin, es geht nichts
+      # verloren.
+      - name: Package artifact (macOS)
+        if: runner.os == 'macOS'
+        run: |
+          cd YT-MP3-Downloader-main/dist
+          if [ ! -d "YTMusicDownloader.app" ]; then
+            echo "Kein .app-Bündel erzeugt - PyInstaller-Aufruf prüfen" >&2
+            exit 1
+          fi
+          # ditto statt zip: erhält die Symlinks im Bündel, die ein
+          # gewöhnliches zip plattmacht - danach startet die App nicht mehr.
+          ditto -c -k --sequesterRsrc --keepParent \
+            "YTMusicDownloader.app" "../../${{ matrix.artifact }}.zip"
+
+      - name: Package artifact (Linux)
+        if: runner.os == 'Linux'
         run: |
           cd YT-MP3-Downloader-main/dist
           zip "../../${{ matrix.artifact }}.zip" YTMusicDownloader
