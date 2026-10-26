@@ -43,6 +43,11 @@ LOG_LABELS = {
 }
 LOG_FILENAME = "_download-log.txt"
 
+TAB_SEARCH = "Suche"
+TAB_PLAYLIST = "Playlist"
+# Karten heben sich etwas vom Hintergrund der Reiter ab
+CARD_COLOR = ("gray95", "gray21")
+
 
 class App(ctk.CTk):
     def __init__(self):
@@ -55,6 +60,8 @@ class App(ctk.CTk):
         self._set_app_icon()
 
         self._thumbnail_refs = []
+        self._selected_card = None
+        self._settings_window = None
 
         # Playlist-Status
         self._playlist_tracks = []
@@ -96,221 +103,314 @@ class App(ctk.CTk):
     # --- Aufbau der Oberfläche ---
     def _build_ui(self):
         self._build_header()
-        self._build_search_bar()
-        self._build_playlist_bar()
 
-        # === Ergebnisbereich (scrollbar) ===
-        self._results_frame = ctk.CTkScrollableFrame(self, corner_radius=10,
-                                                      label_text="",
-                                                      fg_color="transparent")
-        self._results_frame.pack(fill="both", expand=True, padx=20, pady=(6, 6))
+        # Statt aller Knöpfe auf einmal: je ein Reiter für die Suche nach
+        # einzelnen Songs und für ganze Playlists.
+        self._tabs = ctk.CTkTabview(self, corner_radius=12,
+                                    segmented_button_selected_color=config.COLOR_ACCENT,
+                                    segmented_button_selected_hover_color=config.COLOR_ACCENT_HOVER)
+        self._tabs.pack(fill="both", expand=True, padx=16, pady=(4, 0))
+        # Gleich breite Reiter statt so schmal wie ihr Text
+        self._tabs._segmented_button.configure(font=(FONT_FAMILY, 13, "bold"), height=34,
+                                               width=280, dynamic_resizing=False)
 
-        # === Trennlinie ===
-        ctk.CTkFrame(self, height=2, corner_radius=0,
-                     fg_color=("gray80", "gray30")).pack(fill="x", padx=30, pady=(4, 8))
+        self._build_search_tab(self._tabs.add(TAB_SEARCH))
+        self._build_playlist_tab(self._tabs.add(TAB_PLAYLIST))
+        self._tabs.set(TAB_SEARCH)
 
-        self._build_download_bar()
-
-        # === Statuszeile ===
-        self._status = ctk.CTkLabel(self, text="", font=(FONT_FAMILY, 10),
-                                    text_color=config.COLOR_MUTED,
-                                    anchor="w")
-        self._status.pack(fill="x", padx=16, pady=(0, 6))
+        self._build_footer()
 
     def _build_header(self):
         header = ctk.CTkFrame(self, corner_radius=0)
         header.pack(fill="x")
+        self._header = header
 
-        ctk.CTkLabel(header, text="YouTube Music Downloader",
-                     font=(FONT_FAMILY, 24, "bold"),
-                     text_color=(config.COLOR_ACCENT, config.COLOR_ACCENT)).pack(pady=(16, 2))
-        ctk.CTkLabel(header, text="Suche nach Songs und lade sie als WAV herunter",
-                     font=(FONT_FAMILY, 12),
-                     text_color=config.COLOR_MUTED).pack(pady=(0, 2))
+        title_box = ctk.CTkFrame(header, fg_color="transparent")
+        title_box.pack(side="left", padx=20, pady=12)
+
+        ctk.CTkLabel(title_box, text="YouTube Music Downloader",
+                     font=(FONT_FAMILY, 20, "bold"),
+                     text_color=config.COLOR_ACCENT).pack(anchor="w")
 
         # Fassung sichtbar machen – vor allem die von yt-dlp: Ist die zu alt für
         # YouTubes aktuellen Player, hagelt es 403er, und im Fertigprogramm
         # steckt sie unveränderlich fest. Ohne Anzeige rät man beim Suchen.
         ytdlp = ytdlp_version() or "unbekannt"
-        ctk.CTkLabel(header, text=f"Fassung {config.APP_VERSION}  ·  yt-dlp {ytdlp}",
+        ctk.CTkLabel(title_box, text=f"Fassung {config.APP_VERSION}  ·  yt-dlp {ytdlp}",
                      font=(FONT_FAMILY, 10),
-                     text_color=config.COLOR_MUTED).pack(pady=(0, 12))
+                     text_color=config.COLOR_MUTED).pack(anchor="w")
 
         # Theme Toggle
-        self._header = header
-        toggle_container = ctk.CTkFrame(header, fg_color="transparent")
-        toggle_container.place(relx=1.0, rely=0.5, anchor="e", x=-16)
-
-        self._toggle = AnimatedThemeToggle(toggle_container,
+        self._toggle = AnimatedThemeToggle(header,
                                            command=self._on_theme_toggle,
                                            bg=header._apply_appearance_mode(
                                                header.cget("fg_color")))
-        self._toggle.pack()
+        self._toggle.pack(side="right", padx=(8, 20))
 
-    def _build_search_bar(self):
-        search_frame = ctk.CTkFrame(self, fg_color="transparent")
-        search_frame.pack(fill="x", padx=30, pady=(14, 6))
+        self._settings_btn = ctk.CTkButton(header, text="Einstellungen", width=110, height=32,
+                                           command=self._open_settings,
+                                           **self._ghost_style())
+        self._settings_btn.pack(side="right")
 
-        search_row = ctk.CTkFrame(search_frame, fg_color="transparent")
-        search_row.pack()
+    @staticmethod
+    def _ghost_style(size=12):
+        """Zurückhaltender Knopf mit Rahmen – für alles außer der Hauptaktion."""
+        return dict(font=(FONT_FAMILY, size), corner_radius=10,
+                    fg_color="transparent", border_width=1,
+                    border_color=("gray70", "gray40"),
+                    text_color=("gray20", "gray80"),
+                    hover_color=("gray85", "gray25"))
 
-        self._search_entry = ctk.CTkEntry(search_row, width=420, height=42,
-                                          placeholder_text="Songname eingeben...",
-                                          font=(FONT_FAMILY, 14),
-                                          corner_radius=12)
-        self._search_entry.pack(side="left", padx=(0, 10))
-        self._search_entry.bind("<Return>", lambda e: self._start_search())
+    @staticmethod
+    def _menu_style():
+        return dict(height=30, corner_radius=10, font=(FONT_FAMILY, 12),
+                    fg_color=("gray85", "gray25"), button_color=("gray70", "gray35"),
+                    button_hover_color=("gray60", "gray45"),
+                    text_color=("gray10", "gray90"))
 
-        self._search_btn = ctk.CTkButton(search_row, text="Suchen", width=120, height=42,
+    def _build_search_tab(self, tab):
+        search_row = ctk.CTkFrame(tab, fg_color="transparent")
+        search_row.pack(fill="x", padx=6, pady=(6, 8))
+
+        self._search_btn = ctk.CTkButton(search_row, text="Suchen", width=110, height=40,
                                          font=(FONT_FAMILY, 13, "bold"),
                                          corner_radius=12,
                                          fg_color=config.COLOR_ACCENT,
                                          hover_color=config.COLOR_ACCENT_HOVER,
                                          command=self._start_search)
-        self._search_btn.pack(side="left")
+        self._search_btn.pack(side="right")
 
-        self._playlist_btn = ctk.CTkButton(search_row, text="Playlist laden", width=130, height=42,
-                                           font=(FONT_FAMILY, 13, "bold"),
-                                           corner_radius=12,
-                                           fg_color=config.COLOR_PLAYLIST,
-                                           hover_color=config.COLOR_PLAYLIST_HOVER,
-                                           command=self._load_playlist)
-        self._playlist_btn.pack(side="left", padx=(10, 0))
+        self._search_entry = ctk.CTkEntry(search_row, height=40,
+                                          placeholder_text="Songname eingeben...",
+                                          font=(FONT_FAMILY, 14),
+                                          corner_radius=12)
+        self._search_entry.pack(side="left", fill="x", expand=True, padx=(0, 10))
+        self._search_entry.bind("<Return>", lambda e: self._start_search())
 
-    def _build_playlist_bar(self):
-        """Leiste mit Playlistname, Buttons und Fortschritt – erst nach dem Laden sichtbar."""
-        # Fester Platzhalter, damit die Leiste immer an derselben Stelle auftaucht.
-        pl_container = ctk.CTkFrame(self, fg_color="transparent")
-        pl_container.pack(fill="x", padx=20)
+        self._results_frame = ctk.CTkScrollableFrame(tab, corner_radius=10,
+                                                      fg_color="transparent")
+        self._results_frame.pack(fill="both", expand=True)
+        self._show_search_hint()
 
-        self._pl_bar = ctk.CTkFrame(pl_container, corner_radius=12)
+        # Ausgewählter Treffer oder eingefügte URL
+        dl_row = ctk.CTkFrame(tab, fg_color="transparent")
+        dl_row.pack(fill="x", padx=6, pady=(8, 4))
 
-        pl_row = ctk.CTkFrame(self._pl_bar, fg_color="transparent")
-        pl_row.pack(fill="x", padx=12, pady=(10, 4))
-
-        self._pl_label = ctk.CTkLabel(pl_row, text="", font=(FONT_FAMILY, 13, "bold"),
-                                      anchor="w")
-        self._pl_label.pack(side="left", fill="x", expand=True)
-
-        self._covers_var = ctk.BooleanVar(value=tags.AVAILABLE)
-        self._covers_box = ctk.CTkCheckBox(
-            pl_row, text="Cover einbetten", variable=self._covers_var,
-            font=(FONT_FAMILY, 12), checkbox_width=18, checkbox_height=18,
-            fg_color=config.COLOR_PLAYLIST, hover_color=config.COLOR_PLAYLIST_HOVER)
-        self._covers_box.pack(side="right", padx=(12, 0))
-        if not tags.AVAILABLE:
-            # Ohne mutagen lässt sich nichts einbetten – dann gar nicht erst anbieten.
-            self._covers_box.configure(state="disabled", text="Cover (mutagen fehlt)")
-
-        self._pl_folder_btn = ctk.CTkButton(pl_row, text="Ordner...", width=90, height=34,
-                                            font=(FONT_FAMILY, 12),
-                                            corner_radius=10,
-                                            fg_color="transparent", border_width=1,
-                                            border_color=("gray70", "gray40"),
-                                            text_color=("gray20", "gray80"),
-                                            hover_color=("gray85", "gray25"),
-                                            command=self._choose_target_folder)
-        self._pl_folder_btn.pack(side="right", padx=(8, 0))
-
-        self._pl_cancel_btn = ctk.CTkButton(pl_row, text="Abbrechen", width=100, height=34,
-                                            font=(FONT_FAMILY, 12, "bold"),
-                                            corner_radius=10, state="disabled",
-                                            fg_color="gray40", hover_color="gray30",
-                                            command=self._cancel_playlist_download)
-        self._pl_cancel_btn.pack(side="right", padx=(8, 0))
-
-        self._pl_dl_btn = ctk.CTkButton(pl_row, text="Alle herunterladen", width=170, height=34,
-                                        font=(FONT_FAMILY, 12, "bold"),
-                                        corner_radius=10,
-                                        fg_color=config.COLOR_PLAYLIST,
-                                        hover_color=config.COLOR_PLAYLIST_HOVER,
-                                        command=self._start_playlist_download)
-        self._pl_dl_btn.pack(side="right")
-
-        # Zielordner und freier Platz
-        self._pl_hint = ctk.CTkLabel(self._pl_bar, text="", font=(FONT_FAMILY, 10),
-                                     text_color=config.COLOR_MUTED, anchor="w")
-        self._pl_hint.pack(fill="x", padx=12, pady=(0, 4))
-
-        self._pl_progress = ctk.CTkProgressBar(self._pl_bar, height=8, corner_radius=4,
-                                               progress_color=config.COLOR_PLAYLIST)
-        self._pl_progress.set(0)
-        self._pl_progress.pack(fill="x", padx=12, pady=(0, 10))
-
-    def _build_download_bar(self):
-        dl_frame = ctk.CTkFrame(self, fg_color="transparent")
-        dl_frame.pack(fill="x", padx=30, pady=(0, 8))
-
-        dl_row = ctk.CTkFrame(dl_frame, fg_color="transparent")
-        dl_row.pack()
-
-        ctk.CTkLabel(dl_row, text="URL:", font=(FONT_FAMILY, 14),
-                     text_color=("gray40", "gray60")).pack(side="left", padx=(0, 8))
-
-        self._url_entry = ctk.CTkEntry(dl_row, width=420, height=40,
-                                       placeholder_text="Klicke 'Auswählen' bei einem Ergebnis",
-                                       font=(FONT_FAMILY, 13),
-                                       corner_radius=12)
-        self._url_entry.pack(side="left", padx=(0, 10))
-
-        self._dl_btn = ctk.CTkButton(dl_row, text="Download", width=130, height=40,
+        self._dl_btn = ctk.CTkButton(dl_row, text="Download", width=110, height=40,
                                      font=(FONT_FAMILY, 13, "bold"),
                                      corner_radius=12,
                                      fg_color=config.COLOR_DOWNLOAD,
                                      hover_color=config.COLOR_DOWNLOAD_HOVER,
                                      command=self._start_download)
-        self._dl_btn.pack(side="left")
+        self._dl_btn.pack(side="right")
 
-        # Format gilt für Einzel- und Playlist-Downloads
-        format_row = ctk.CTkFrame(dl_frame, fg_color="transparent")
-        format_row.pack(pady=(8, 0))
+        self._url_entry = ctk.CTkEntry(dl_row, height=40,
+                                       placeholder_text="Treffer auswählen oder YouTube-URL einfügen",
+                                       font=(FONT_FAMILY, 13),
+                                       corner_radius=12)
+        self._url_entry.pack(side="left", fill="x", expand=True, padx=(0, 10))
 
-        ctk.CTkLabel(format_row, text="Format:", font=(FONT_FAMILY, 12),
+    def _build_playlist_tab(self, tab):
+        # Solange nichts geladen ist, nur ein Hinweis und ein einziger Knopf
+        self._pl_empty = ctk.CTkFrame(tab, fg_color="transparent")
+        self._pl_empty.pack(fill="both", expand=True)
+
+        empty_box = ctk.CTkFrame(self._pl_empty, fg_color="transparent")
+        empty_box.place(relx=0.5, rely=0.45, anchor="center")
+
+        ctk.CTkLabel(empty_box, text="Noch keine Playlist geladen",
+                     font=(FONT_FAMILY, 16, "bold")).pack()
+        ctk.CTkLabel(empty_box,
+                     text="Exportiere eine Spotify-Playlist als JSON oder CSV\n"
+                          "(z. B. mit Exportify) und öffne die Datei hier.",
+                     font=(FONT_FAMILY, 12), text_color=config.COLOR_MUTED,
+                     justify="center").pack(pady=(6, 16))
+        self._pl_open_btn = ctk.CTkButton(empty_box, text="Playlist-Datei öffnen",
+                                          width=200, height=40,
+                                          font=(FONT_FAMILY, 13, "bold"),
+                                          corner_radius=12,
+                                          fg_color=config.COLOR_PLAYLIST,
+                                          hover_color=config.COLOR_PLAYLIST_HOVER,
+                                          command=self._load_playlist)
+        self._pl_open_btn.pack()
+
+        # Nach dem Laden: Kopfkarte mit Zusammenfassung und Fortschritt, darunter die Songs
+        self._pl_content = ctk.CTkFrame(tab, fg_color="transparent")
+
+        self._pl_bar = ctk.CTkFrame(self._pl_content, corner_radius=12, fg_color=CARD_COLOR)
+        self._pl_bar.pack(fill="x", padx=4, pady=(4, 6))
+
+        pl_row = ctk.CTkFrame(self._pl_bar, fg_color="transparent")
+        pl_row.pack(fill="x", padx=12, pady=(10, 2))
+
+        # Starten und Abbrechen teilen sich einen Platz – es ist immer nur einer sinnvoll
+        self._pl_action = ctk.CTkFrame(pl_row, fg_color="transparent")
+        self._pl_action.pack(side="right")
+
+        self._pl_dl_btn = ctk.CTkButton(self._pl_action, text="Alle herunterladen",
+                                        width=170, height=34,
+                                        font=(FONT_FAMILY, 12, "bold"),
+                                        corner_radius=10,
+                                        fg_color=config.COLOR_PLAYLIST,
+                                        hover_color=config.COLOR_PLAYLIST_HOVER,
+                                        command=self._start_playlist_download)
+        self._pl_dl_btn.pack()
+
+        self._pl_cancel_btn = ctk.CTkButton(self._pl_action, text="Abbrechen",
+                                            width=170, height=34,
+                                            font=(FONT_FAMILY, 12, "bold"),
+                                            corner_radius=10,
+                                            fg_color="gray40", hover_color="gray30",
+                                            command=self._cancel_playlist_download)
+
+        self._pl_reload_btn = ctk.CTkButton(pl_row, text="Andere Datei...", width=120, height=34,
+                                            command=self._load_playlist,
+                                            **self._ghost_style())
+        self._pl_reload_btn.pack(side="right", padx=(0, 8))
+
+        self._pl_label = ctk.CTkLabel(pl_row, text="", font=(FONT_FAMILY, 14, "bold"),
+                                      anchor="w")
+        self._pl_label.pack(side="left", fill="x", expand=True)
+
+        # Zielordner und freier Platz
+        self._pl_hint = ctk.CTkLabel(self._pl_bar, text="", font=(FONT_FAMILY, 10),
+                                     text_color=config.COLOR_MUTED, anchor="w")
+        self._pl_hint.pack(fill="x", padx=12, pady=(0, 6))
+
+        self._pl_progress = ctk.CTkProgressBar(self._pl_bar, height=8, corner_radius=4,
+                                               progress_color=config.COLOR_PLAYLIST)
+        self._pl_progress.set(0)
+        self._pl_progress.pack(fill="x", padx=12, pady=(0, 12))
+
+        self._pl_rows_frame = ctk.CTkScrollableFrame(self._pl_content, corner_radius=10,
+                                                      fg_color="transparent")
+        self._pl_rows_frame.pack(fill="both", expand=True)
+
+        # Einstellungen, die nur für Playlists gelten. Sie leben im Einstellungsfenster,
+        # die Werte aber hier, damit sie das Schließen des Fensters überdauern.
+        self._covers_var = ctk.BooleanVar(value=tags.AVAILABLE)
+
+    def _build_footer(self):
+        """Format (gilt für beide Reiter) und Statuszeile."""
+        footer = ctk.CTkFrame(self, fg_color="transparent")
+        footer.pack(fill="x", padx=20, pady=(8, 10))
+
+        ctk.CTkLabel(footer, text="Format:", font=(FONT_FAMILY, 12),
                      text_color=config.COLOR_MUTED).pack(side="left", padx=(0, 8))
 
         self._format_menu = ctk.CTkOptionMenu(
-            format_row, width=200, height=30, corner_radius=10,
-            font=(FONT_FAMILY, 12),
+            footer, width=210,
             values=[f.label for f in config.AUDIO_FORMATS],
-            fg_color=("gray85", "gray25"), button_color=("gray70", "gray35"),
-            button_hover_color=("gray60", "gray45"),
-            text_color=("gray10", "gray90"),
-            command=self._on_format_change)
+            command=self._on_format_change, **self._menu_style())
         self._format_menu.set(self._audio_format.label)
         self._format_menu.pack(side="left")
 
-        self._format_hint = ctk.CTkLabel(format_row, text="", font=(FONT_FAMILY, 11),
+        self._format_hint = ctk.CTkLabel(footer, text="", font=(FONT_FAMILY, 11),
                                          text_color=config.COLOR_MUTED)
         self._format_hint.pack(side="left", padx=(10, 0))
         self._update_format_hint()
 
-        ctk.CTkLabel(format_row, text="Gleichzeitig:", font=(FONT_FAMILY, 12),
-                     text_color=config.COLOR_MUTED).pack(side="left", padx=(20, 8))
+        self._status = ctk.CTkLabel(footer, text="", font=(FONT_FAMILY, 11),
+                                    text_color=config.COLOR_MUTED,
+                                    anchor="w")
+        self._status.pack(side="left", fill="x", expand=True, padx=(16, 0))
 
-        self._workers_menu = ctk.CTkOptionMenu(
-            format_row, width=70, height=30, corner_radius=10,
-            font=(FONT_FAMILY, 12),
-            values=[str(n) for n in config.WORKER_CHOICES],
-            fg_color=("gray85", "gray25"), button_color=("gray70", "gray35"),
-            button_hover_color=("gray60", "gray45"),
-            text_color=("gray10", "gray90"),
-            command=self._on_workers_change)
-        self._workers_menu.set(str(self._workers))
-        self._workers_menu.pack(side="left")
+    # --- Einstellungen ---
+    def _open_settings(self):
+        if self._settings_window is not None and self._settings_window.winfo_exists():
+            self._settings_window.focus()
+            return
 
-        ctk.CTkLabel(format_row, text="Cookies:", font=(FONT_FAMILY, 12),
-                     text_color=config.COLOR_MUTED).pack(side="left", padx=(20, 8))
+        win = ctk.CTkToplevel(self)
+        win.title("Einstellungen")
+        win.resizable(False, False)
+        win.transient(self)
+        self._settings_window = win
 
-        self._cookies_menu = ctk.CTkOptionMenu(
-            format_row, width=110, height=30, corner_radius=10,
-            font=(FONT_FAMILY, 12),
-            values=list(config.COOKIE_BROWSERS),
-            fg_color=("gray85", "gray25"), button_color=("gray70", "gray35"),
-            button_hover_color=("gray60", "gray45"),
-            text_color=("gray10", "gray90"),
-            command=self._on_cookies_change)
-        self._cookies_menu.set(config.COOKIE_BROWSERS[0])
-        self._cookies_menu.pack(side="left")
+        body = ctk.CTkFrame(win, fg_color="transparent")
+        body.pack(fill="both", expand=True, padx=24, pady=20)
+
+        ctk.CTkLabel(body, text="Playlist-Downloads", font=(FONT_FAMILY, 15, "bold"),
+                     anchor="w").pack(fill="x")
+        ctk.CTkLabel(body, text="Diese Einstellungen gelten für den Reiter \"Playlist\".",
+                     font=(FONT_FAMILY, 11), text_color=config.COLOR_MUTED,
+                     anchor="w").pack(fill="x", pady=(0, 8))
+
+        # Zielordner
+        # Darin legt jede Playlist ihren eigenen Unterordner an.
+        folder_row, self._folder_label = self._settings_row(body, "Zielordner",
+                                                            self._target_root)
+        ctk.CTkButton(folder_row, text="Ändern...", width=90, height=30,
+                      command=self._choose_target_folder,
+                      **self._ghost_style()).pack(side="right", padx=(10, 0))
+
+        # Gleichzeitige Downloads
+        workers_row, _ = self._settings_row(
+            body, "Gleichzeitig",
+            "Mehr ist schneller, erhöht aber das Risiko, dass YouTube ausbremst.")
+        workers_menu = ctk.CTkOptionMenu(workers_row, width=80,
+                                         values=[str(n) for n in config.WORKER_CHOICES],
+                                         command=self._on_workers_change, **self._menu_style())
+        workers_menu.set(str(self._workers))
+        workers_menu.pack(side="right")
+
+        # Cookies
+        cookies_row, _ = self._settings_row(
+            body, "Cookies",
+            "Für altersbeschränkte Videos: Browser wählen, in dem du bei YouTube angemeldet bist.")
+        cookies_menu = ctk.CTkOptionMenu(cookies_row, width=120,
+                                         values=list(config.COOKIE_BROWSERS),
+                                         command=self._on_cookies_change, **self._menu_style())
+        cookies_menu.set(self._cookies_browser or config.COOKIE_BROWSERS[0])
+        cookies_menu.pack(side="right")
+
+        # Cover
+        covers_row, _ = self._settings_row(body, "Cover einbetten",
+                                        "Albumcover in die Audiodateien schreiben.")
+        covers_box = ctk.CTkSwitch(covers_row, text="", variable=self._covers_var, width=46,
+                                   progress_color=config.COLOR_PLAYLIST)
+        covers_box.pack(side="right")
+        if not tags.AVAILABLE:
+            # Ohne mutagen lässt sich nichts einbetten – dann gar nicht erst anbieten.
+            covers_box.configure(state="disabled")
+            ctk.CTkLabel(covers_row, text="mutagen fehlt", font=(FONT_FAMILY, 11),
+                         text_color=config.COLOR_WARNING).pack(side="right", padx=(0, 8))
+
+        ctk.CTkButton(body, text="Fertig", width=110, height=34,
+                      font=(FONT_FAMILY, 12, "bold"), corner_radius=10,
+                      fg_color=config.COLOR_ACCENT, hover_color=config.COLOR_ACCENT_HOVER,
+                      command=win.destroy).pack(anchor="e", pady=(16, 0))
+
+        # Mittig über dem Hauptfenster öffnen
+        win.update_idletasks()
+        x = self.winfo_rootx() + (self.winfo_width() - win.winfo_reqwidth()) // 2
+        y = self.winfo_rooty() + 80
+        win.geometry(f"+{max(0, x)}+{max(0, y)}")
+        # CTkToplevel landet unter Windows sonst gern hinter dem Hauptfenster
+        win.after(150, win.lift)
+        win.after(150, win.focus)
+
+    @staticmethod
+    def _settings_row(parent, title, description):
+        """Eine Zeile im Einstellungsfenster; das Bedienelement kommt rechts hinein.
+
+        Liefert den Rahmen dafür und das Beschreibungsfeld (für spätere Änderungen).
+        """
+        row = ctk.CTkFrame(parent, corner_radius=10)
+        row.pack(fill="x", pady=4)
+
+        inner = ctk.CTkFrame(row, fg_color="transparent")
+        inner.pack(fill="x", padx=12, pady=10)
+
+        text_box = ctk.CTkFrame(inner, fg_color="transparent")
+        text_box.pack(side="left", fill="x", expand=True, padx=(0, 16))
+        ctk.CTkLabel(text_box, text=title, font=(FONT_FAMILY, 13, "bold"),
+                     anchor="w").pack(fill="x")
+        label = ctk.CTkLabel(text_box, text=description, font=(FONT_FAMILY, 10),
+                             text_color=config.COLOR_MUTED, anchor="w", justify="left",
+                             wraplength=250)
+        label.pack(fill="x")
+        return inner, label
 
     # --- Theme ---
     def _on_theme_toggle(self, is_light):
@@ -334,9 +434,8 @@ class App(ctk.CTk):
             return
 
         self._search_btn.configure(state="disabled")
-        self._status.configure(text="  Suche läuft...", text_color=config.COLOR_ACCENT)
+        self._status.configure(text="Suche läuft...", text_color=config.COLOR_ACCENT)
         self._clear_results()
-        self._pl_bar.pack_forget()
 
         ctk.CTkLabel(self._results_frame, text="Suche...",
                      font=(FONT_FAMILY, 14),
@@ -350,9 +449,15 @@ class App(ctk.CTk):
 
     def _clear_results(self):
         self._thumbnail_refs.clear()
-        self._playlist_status_labels.clear()
+        self._selected_card = None
         for w in self._results_frame.winfo_children():
             w.destroy()
+
+    def _show_search_hint(self):
+        ctk.CTkLabel(self._results_frame,
+                     text="Suche nach einem Song – oder füge unten direkt eine YouTube-URL ein.",
+                     font=(FONT_FAMILY, 13),
+                     text_color=config.COLOR_MUTED).pack(pady=40)
 
     def _show_results(self, results):
         self._clear_results()
@@ -374,7 +479,8 @@ class App(ctk.CTk):
         duration = format_duration(result.get("duration"))
         channel = result.get("channel", result.get("uploader", ""))
 
-        card = ctk.CTkFrame(self._results_frame, corner_radius=12, height=90)
+        card = ctk.CTkFrame(self._results_frame, corner_radius=12, height=90,
+                            fg_color=CARD_COLOR)
         card.pack(fill="x", padx=4, pady=4)
         card.pack_propagate(False)
 
@@ -406,19 +512,28 @@ class App(ctk.CTk):
                          text_color=config.COLOR_MUTED,
                          anchor="w").pack(anchor="w", pady=(2, 0))
 
-        # Button
+        # Button – dezent, damit die Liste nicht nur aus roten Knöpfen besteht
         ctk.CTkButton(card, text="Auswählen", width=100, height=32,
                       font=(FONT_FAMILY, 11, "bold"),
                       corner_radius=10,
-                      fg_color=config.COLOR_ACCENT,
-                      hover_color=config.COLOR_ACCENT_HOVER,
-                      command=lambda u=url: self._select_url(u)
+                      fg_color="transparent", border_width=1,
+                      border_color=config.COLOR_ACCENT,
+                      text_color=config.COLOR_ACCENT,
+                      hover_color=("gray85", "gray25"),
+                      command=lambda u=url, c=card: self._select_url(u, c)
                       ).pack(side="right", padx=(8, 14), pady=8)
 
-    def _select_url(self, url):
+    def _select_url(self, url, card=None):
         self._url_entry.configure(state="normal")
         self._url_entry.delete(0, "end")
         self._url_entry.insert(0, url)
+
+        # Gewählten Treffer umranden, damit klar ist, was gleich geladen wird
+        if self._selected_card is not None and self._selected_card.winfo_exists():
+            self._selected_card.configure(border_width=0)
+        self._selected_card = card
+        if card is not None:
+            card.configure(border_width=2, border_color=config.COLOR_ACCENT)
 
     # --- Playlist laden und anzeigen ---
     def _load_playlist(self):
@@ -447,13 +562,20 @@ class App(ctk.CTk):
         self._playlist_name = name
         self._show_playlist()
 
+    def _clear_playlist_rows(self):
+        self._playlist_status_labels.clear()
+        for w in self._pl_rows_frame.winfo_children():
+            w.destroy()
+
     def _show_playlist(self):
-        self._clear_results()
+        self._clear_playlist_rows()
         tracks = self._playlist_tracks
 
         self._update_playlist_summary()
         self._pl_progress.set(0)
-        self._pl_bar.pack(fill="x", pady=(4, 0))
+        self._pl_empty.pack_forget()
+        self._pl_content.pack(fill="both", expand=True)
+        self._tabs.set(TAB_PLAYLIST)
 
         # Nur die ersten Zeilen zeichnen – bei mehreren tausend Songs würde der
         # Aufbau sonst minutenlang blockieren. Geladen wird trotzdem alles.
@@ -463,14 +585,15 @@ class App(ctk.CTk):
 
         hidden = len(tracks) - config.MAX_VISIBLE_ROWS
         if hidden > 0:
-            ctk.CTkLabel(self._results_frame,
+            ctk.CTkLabel(self._pl_rows_frame,
                          text=f"... und {hidden} weitere Songs "
                               f"(werden ebenfalls geladen, siehe Fortschritt unten)",
                          font=(FONT_FAMILY, 12),
                          text_color=config.COLOR_MUTED).pack(pady=14)
 
     def _create_playlist_row(self, index, track, number_width):
-        row = ctk.CTkFrame(self._results_frame, corner_radius=10, height=52)
+        row = ctk.CTkFrame(self._pl_rows_frame, corner_radius=10, height=52,
+                           fg_color=CARD_COLOR)
         row.pack(fill="x", padx=4, pady=3)
         row.pack_propagate(False)
 
@@ -523,10 +646,14 @@ class App(ctk.CTk):
 
     def _choose_target_folder(self):
         folder = filedialog.askdirectory(title="Zielordner wählen",
-                                         initialdir=self._target_root)
+                                         initialdir=self._target_root,
+                                         parent=self._settings_window or self)
         if folder:
             self._target_root = folder
-            self._update_playlist_summary()
+            if self._settings_window is not None and self._settings_window.winfo_exists():
+                self._folder_label.configure(text=folder)
+            if self._playlist_tracks:
+                self._update_playlist_summary()
 
     def _estimated_bytes(self):
         return downloader.estimate_bytes(self._playlist_tracks, self._audio_format)
@@ -571,14 +698,12 @@ class App(ctk.CTk):
             on_progress=lambda done, total: self._ui_queue.put(("progress", done, total)),
         )
 
-        self._pl_dl_btn.configure(state="disabled")
-        self._pl_cancel_btn.configure(state="normal")
-        self._playlist_btn.configure(state="disabled")
-        self._dl_btn.configure(state="disabled")
-        self._search_btn.configure(state="disabled")
-        self._format_menu.configure(state="disabled")
-        self._workers_menu.configure(state="disabled")
-        self._pl_folder_btn.configure(state="disabled")
+        if self._settings_window is not None and self._settings_window.winfo_exists():
+            self._settings_window.destroy()
+        self._pl_dl_btn.pack_forget()
+        self._pl_cancel_btn.configure(state="normal", text="Abbrechen")
+        self._pl_cancel_btn.pack()
+        self._set_controls_busy(True)
         self._pl_progress.set(0)
         self._last_line = ""
         self._log_file = None
@@ -603,16 +728,16 @@ class App(ctk.CTk):
             f"Auf {self._target_root} sind nur {format_size(free)} frei –\n"
             f"das reicht für etwa {possible} Songs.\n\n"
             "Tipp: ein kleineres Format wählen (MP3 320 kbps klingt sehr gut und "
-            "braucht nur ein Zehntel von WAV) oder über \"Ordner...\" eine externe "
-            "Festplatte als Ziel setzen.\n\n"
+            "braucht nur ein Zehntel von WAV) oder in den Einstellungen eine externe "
+            "Festplatte als Zielordner setzen.\n\n"
             "Trotzdem starten? Der Download stoppt automatisch, bevor das "
             "Laufwerk volläuft – bereits geladene Songs bleiben erhalten.")
 
     def _cancel_playlist_download(self):
         if self._playlist_job:
             self._playlist_job.cancel()
-        self._pl_cancel_btn.configure(state="disabled")
-        self._status.configure(text="  Abbruch nach dem aktuellen Song...",
+        self._pl_cancel_btn.configure(state="disabled", text="Wird abgebrochen...")
+        self._status.configure(text="Abbruch nach dem aktuellen Song...",
                                text_color=config.COLOR_WARNING)
 
     def _playlist_thread(self):
@@ -727,7 +852,7 @@ class App(ctk.CTk):
         parallel = f"  ·  {self._workers} gleichzeitig" if self._workers > 1 else ""
         # Zuletzt fertiger Song, damit sichtbar ist, dass es vorangeht
         last = f"  ·  {self._last_line.split('] ', 1)[-1]}" if self._last_line else ""
-        self._status.configure(text=f"  {done}/{total} Songs{parallel}{last}",
+        self._status.configure(text=f"{done}/{total} Songs{parallel}{last}",
                                text_color=config.COLOR_ACCENT)
 
     def _show_summary(self, result):
@@ -787,8 +912,9 @@ class App(ctk.CTk):
             return ("YouTube stuft die Zugriffe als automatisiert ein und verlangt eine "
                     f"Anmeldung (\"not a bot\"). {fehlen}\n\n"
                     "Das trifft jeden weiteren Song, deshalb wurde gestoppt.\n"
-                    "-> 1-2 Stunden warten, \"Gleichzeitig\" auf 1 stellen und bei "
-                    "\"Cookies\" den Browser wählen, in dem du bei YouTube angemeldet bist.")
+                    "-> 1-2 Stunden warten, in den Einstellungen \"Gleichzeitig\" auf 1 "
+                    "stellen und bei \"Cookies\" den Browser wählen, in dem du bei YouTube "
+                    "angemeldet bist.")
         if reason == youtube.FFMPEG_MISSING:
             return ("FFmpeg wurde nicht gefunden – ohne das lässt sich nicht in WAV, "
                     f"FLAC oder MP3 umwandeln. {fehlen}\n\n"
@@ -800,7 +926,8 @@ class App(ctk.CTk):
             return (f"{config.MAX_CONSECUTIVE_FAILURES} Songs sind hintereinander "
                     f"fehlgeschlagen – da stimmt etwas Grundsätzliches nicht. {fehlen}\n\n"
                     "-> Internetverbindung prüfen; wenn die steht, blockt YouTube "
-                    "vermutlich: Pause machen und \"Gleichzeitig\" auf 1 stellen.")
+                    "vermutlich: Pause machen und in den Einstellungen \"Gleichzeitig\" "
+                    "auf 1 stellen.")
         return f"Vorzeitig gestoppt ({reason}). {fehlen}"
 
     @staticmethod
@@ -811,13 +938,13 @@ class App(ctk.CTk):
             tips.append(
                 "Viele Blockaden (403/429) bedeuten meist, dass YouTube wegen zu "
                 "vieler gleichzeitiger Zugriffe ausbremst.\n"
-                "-> \"Gleichzeitig\" auf 1 oder 2 stellen und erneut starten. "
+                "-> In den Einstellungen \"Gleichzeitig\" auf 1 oder 2 stellen und erneut starten. "
                 "Fertige Songs werden übersprungen, es werden nur die fehlenden geholt.")
         if categories.get(youtube.AGE_RESTRICTED):
             tips.append(
                 "Altersbeschränkte Videos brauchen einen angemeldeten Zugang.\n"
-                "-> Bei \"Cookies\" den Browser wählen, in dem du bei YouTube "
-                "angemeldet bist, und erneut starten.")
+                "-> In den Einstellungen bei \"Cookies\" den Browser wählen, in dem du "
+                "bei YouTube angemeldet bist, und erneut starten.")
         if categories.get(youtube.COOKIE_ERROR):
             tips.append(
                 "Die Cookies konnten nicht gelesen werden.\n"
@@ -839,14 +966,16 @@ class App(ctk.CTk):
     def _finish_playlist_download(self):
         self._playlist_job = None
         self._status.configure(text="")
-        self._pl_dl_btn.configure(state="normal")
-        self._pl_cancel_btn.configure(state="disabled")
-        self._playlist_btn.configure(state="normal")
-        self._dl_btn.configure(state="normal")
-        self._search_btn.configure(state="normal")
-        self._format_menu.configure(state="normal")
-        self._workers_menu.configure(state="normal")
-        self._pl_folder_btn.configure(state="normal")
+        self._pl_cancel_btn.pack_forget()
+        self._pl_dl_btn.pack()
+        self._set_controls_busy(False)
+
+    def _set_controls_busy(self, busy):
+        """Während eine Playlist lädt, alles sperren, was ihr dazwischenfunken würde."""
+        state = "disabled" if busy else "normal"
+        for widget in (self._pl_reload_btn, self._pl_open_btn, self._dl_btn,
+                       self._search_btn, self._format_menu, self._settings_btn):
+            widget.configure(state=state)
 
     # --- Einzel-Download ---
     def _start_download(self):
@@ -858,13 +987,13 @@ class App(ctk.CTk):
         self._dl_btn.configure(state="disabled")
         self._search_btn.configure(state="disabled")
         self.configure(cursor="watch" if sys.platform != "win32" else "wait")
-        self._status.configure(text="  Download läuft...", text_color=config.COLOR_ACCENT)
+        self._status.configure(text="Download läuft...", text_color=config.COLOR_ACCENT)
 
         threading.Thread(target=self._download_thread, args=(url,), daemon=True).start()
 
     def _show_retry(self, attempt, category):
         """Zwischenstand, solange ein einzelner Song erneut versucht wird."""
-        text = (f"  {ERROR_LABELS.get(category, category)} – "
+        text = (f"{ERROR_LABELS.get(category, category)} – "
                 f"neuer Versuch ({attempt}/{len(config.RETRY_DELAYS)})...")
         self.after(0, lambda: self._status.configure(text=text,
                                                      text_color=config.COLOR_WARNING))
