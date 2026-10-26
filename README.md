@@ -15,6 +15,7 @@ A modern desktop application to search and download audio from YouTube videos as
 - **Song Search** — Search for any song or video by name, powered by yt-dlp
 - **10 Results** — Displays up to 10 search results with thumbnails, titles, channel names and duration
 - **One-Click Select** — Click "Auswählen" to pick a result for download
+- **Tidy Layout** — Separate tabs for **Suche** (single songs) and **Playlist**; less-used options live in **Einstellungen**
 - **Playlist Import** — Load an exported Spotify playlist (JSON or CSV) and download every song in order
 - **High-Quality WAV** — Downloads the best available audio and converts to uncompressed WAV (44.1 kHz, 16-bit, stereo)
 - **Dark / Light Theme** — Animated theme toggle with sun/moon icons
@@ -50,7 +51,7 @@ pip install customtkinter yt-dlp Pillow requests mutagen
 ```
 
 `mutagen` is only needed to embed cover art — without it the app runs fine and the
-**Cover einbetten** box is greyed out.
+**Cover einbetten** switch in **Einstellungen** is greyed out.
 
 ### Start
 
@@ -63,10 +64,10 @@ python main.py
 
 ## How It Works
 
-1. Enter a song name in the search bar and click **Suchen**
+1. On the **Suche** tab, enter a song name and click **Suchen**
 2. Browse the results — each card shows a thumbnail, title, channel and duration
 3. Click **Auswählen** on the song you want
-4. The URL is filled in automatically — click **Download**
+4. The URL is filled in automatically (or paste one yourself) — click **Download**
 5. The WAV file is saved to your `Downloads` folder
 
 ---
@@ -76,7 +77,7 @@ python main.py
 Export your Spotify playlist with any export tool (e.g. [Exportify](https://exportify.net), which
 gives you a CSV or JSON file), then:
 
-1. Click **Playlist laden** and pick the exported `.json` or `.csv` file
+1. Switch to the **Playlist** tab, click **Playlist-Datei öffnen** and pick the exported `.json` or `.csv` file
 2. The track list appears in playlist order — check it, then click **Alle herunterladen**
 3. Every track is searched on YouTube and downloaded as WAV into
    `Downloads/<Playlist name>/`, numbered so the order is preserved
@@ -143,7 +144,7 @@ YouTube rejects a fair share of requests. The app reacts differently depending o
 | Error | Reaction |
 |---|---|
 | `HTTP Error 403 / 429`, connection errors | Throttling or a hiccup — same video is retried up to 3× with a growing pause, then the next search result is tried |
-| `Sign in to confirm your age` | Age-gated — moves straight to the next search result; set **Cookies** to a browser you are signed in to if you want the original |
+| `Sign in to confirm your age` | Age-gated — moves straight to the next search result; set **Cookies** (in **Einstellungen**) to a browser you are signed in to if you want the original |
 | `This video is not available` | Dead video — moves straight to the next search result |
 | `Sign in to confirm you're not a bot` | YouTube flagged your IP — **the run stops immediately**, since every remaining song would fail too |
 | `Requested format is not available` | Reported as "Keine Tonspur geliefert". Despite the wording this is rarely a broken video: a flagged IP gets responses with no playable audio streams. Treat a flood of these like the bot check |
@@ -161,7 +162,7 @@ To reduce the chance of being flagged in the first place, each playlist download
 random 2–6 seconds beforehand (`SLEEP_BETWEEN` in `ytmd/config.py`; single downloads are not
 delayed). Getting blocked costs far more time than the pause does.
 
-**A wave of 403s almost always means too many parallel downloads.** Set **Gleichzeitig** to 1
+**A wave of 403s almost always means too many parallel downloads.** Set **Gleichzeitig** (in **Einstellungen**) to 1
 or 2 and start again — finished songs are skipped, so only the missing ones are fetched.
 It is also worth keeping yt-dlp current, since YouTube changes its defenses regularly:
 
@@ -171,7 +172,7 @@ pip install -U yt-dlp
 
 ### Speed
 
-**Gleichzeitig** (next to the format menu) sets how many songs are downloaded in parallel —
+**Gleichzeitig** (in **Einstellungen**) sets how many songs are downloaded in parallel —
 3 by default, up to 6. A 3000 song playlist takes roughly a day one at a time, about
 7 hours with three at once. Track order is not affected: the position is baked into the file
 name (`0001 - Artist - Title.wav`), no matter which download finishes first. If YouTube starts
@@ -179,7 +180,7 @@ throttling or downloads begin to fail, lower the value.
 
 ### Cover art
 
-With **Cover einbetten** ticked (default), the artwork is written *into* the audio file —
+With **Cover einbetten** switched on in **Einstellungen** (default), the artwork is written *into* the audio file —
 no separate image files. It comes from the Spotify export, at the largest size offered, so
 it is the same artwork Spotify shows. Exports without artwork (`Album Image URL` in
 Exportify CSV, `album.images` in API JSON) fall back to the YouTube thumbnail of the
@@ -217,7 +218,7 @@ Cover eingebettet: 2841  (ohne Cover: 47)
 
 ### Disk space
 
-Uncompressed WAV is big — roughly **35 MB per song**. Before starting, the playlist bar shows
+Uncompressed WAV is big — roughly **35 MB per song**. Before starting, the playlist card shows
 the estimated total, the target folder and how much space is free there:
 
 | Format | per minute | 3000 songs |
@@ -227,8 +228,8 @@ the estimated total, the target folder and how much space is free there:
 | MP3 320 kbps       | 2.3 MB | ~24 GB |
 | MP3 192 kbps       | 1.4 MB | ~14 GB |
 
-Pick a format under **Format** at the bottom (it applies to single downloads too), or use
-**Ordner...** to download onto an external drive. If the space still would not be enough, the
+Pick a format under **Format** at the bottom (it applies to single downloads too), or set the
+**Zielordner** in **Einstellungen** to an external drive. If the space still would not be enough, the
 app warns before it starts and — should the drive fill up anyway — stops cleanly instead of
 running the disk to zero. Already downloaded songs are kept, so you can free up space and
 restart to continue where it left off.
