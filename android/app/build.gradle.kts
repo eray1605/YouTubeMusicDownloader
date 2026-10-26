@@ -13,8 +13,8 @@ android {
         applicationId = "de.eray.ytmusic"
         minSdk = 24
         targetSdk = 35
-        versionCode = 146
-        versionName = "1.4.6"
+        versionCode = 150
+        versionName = "1.5.0"
 
         ndk {
             // arm64-v8a für echte Telefone, x86_64 für den Emulator.
